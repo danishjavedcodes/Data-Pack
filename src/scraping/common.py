@@ -13,6 +13,14 @@ from bs4 import BeautifulSoup
 from src.utils.io import download_image, rate_limited_sleep
 from src.utils.db import Database
 
+# Try to import the specialized Unsplash scraper
+try:
+    from src.scraping.unsplash import UnsplashScraper
+    UNSPLASH_SCRAPER_AVAILABLE = True
+except ImportError:
+    UNSPLASH_SCRAPER_AVAILABLE = False
+    print("Warning: Specialized Unsplash scraper not available, using fallback method")
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -26,25 +34,45 @@ HEADERS = {
     "Cache-Control": "max-age=0",
 }
 
-# Enhanced site configurations with modern selectors
+# API headers for modern sites
+API_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
+    "X-Requested-With": "XMLHttpRequest",
+}
+
+# Enhanced site configurations with modern selectors and API endpoints
 SITE_CONFIGS = {
     "unsplash": {
         "search_url": lambda q, page: f"https://unsplash.com/s/photos/{quote(q)}?page={page}",
+        "api_url": lambda q, page: f"https://unsplash.com/napi/search/photos?query={quote(q)}&page={page}&per_page=30&order_by=relevant",
         "img_selectors": [
             "img[src*='images.unsplash.com']", 
             "img[data-src*='images.unsplash.com']",
             "img[srcset*='images.unsplash.com']",
             "a[href*='/photos/'] img",
             "figure img",
-            "[data-test='photo-card'] img"
+            "[data-test='photo-card'] img",
+            "img[alt*='photo']",
+            "img[alt*='image']"
         ],
         "quality_patterns": [r"w=\d+", r"h=\d+", r"fit=crop", r"auto=format", r"q=\d+"],
         "min_quality_score": 1,
         "dynamic_loading": True,
-        "scroll_required": True
+        "scroll_required": True,
+        "use_api": True,
+        "api_image_key": "urls.regular",  # Path to image URL in API response
+        "use_specialized_scraper": True  # Use the specialized Unsplash scraper
     },
     "pexels": {
         "search_url": lambda q, page: f"https://www.pexels.com/search/{quote(q)}/?page={page}",
+        "api_url": lambda q, page: f"https://www.pexels.com/api/v1/search?query={quote(q)}&page={page}&per_page=15",
         "img_selectors": [
             "img[src*='images.pexels.com']", 
             "img[data-src*='images.pexels.com']",
@@ -56,10 +84,13 @@ SITE_CONFIGS = {
         "quality_patterns": [r"auto=compress", r"cs=tinysrgb", r"w=\d+", r"h=\d+"],
         "min_quality_score": 1,
         "dynamic_loading": True,
-        "scroll_required": True
+        "scroll_required": True,
+        "use_api": True,
+        "api_image_key": "src.large2x"  # Pexels API structure
     },
     "pixabay": {
         "search_url": lambda q, page: f"https://pixabay.com/images/search/{quote(q)}/?pagi={page}",
+        "api_url": lambda q, page: f"https://pixabay.com/api/?key=DEMO_KEY&q={quote(q)}&page={page}&per_page=20",
         "img_selectors": [
             "img[src*='cdn.pixabay.com']", 
             "img[data-src*='cdn.pixabay.com']",
@@ -68,7 +99,9 @@ SITE_CONFIGS = {
         ],
         "quality_patterns": [r"__340", r"__480", r"__1280", r"__1920"],
         "min_quality_score": 2,
-        "dynamic_loading": False
+        "dynamic_loading": False,
+        "use_api": True,
+        "api_image_key": "webformatURL"
     },
     "flickr": {
         "search_url": lambda q, page: f"https://www.flickr.com/search/?text={quote(q)}&page={page}",
@@ -79,7 +112,8 @@ SITE_CONFIGS = {
         ],
         "quality_patterns": [r"_b\.", r"_c\.", r"_z\.", r"_n\."],
         "min_quality_score": 2,
-        "dynamic_loading": False
+        "dynamic_loading": False,
+        "use_api": False
     },
     "wallhaven": {
         "search_url": lambda q, page: f"https://wallhaven.cc/search?q={quote(q)}&page={page}",
@@ -90,7 +124,8 @@ SITE_CONFIGS = {
         ],
         "quality_patterns": [r"full", r"large", r"medium"],
         "min_quality_score": 1,
-        "dynamic_loading": False
+        "dynamic_loading": False,
+        "use_api": False
     },
     "deviantart": {
         "search_url": lambda q, page: f"https://www.deviantart.com/search?q={quote(q)}&page={page}",
@@ -101,7 +136,8 @@ SITE_CONFIGS = {
         ],
         "quality_patterns": [r"v1", r"f_auto", r"w_\d+", r"h_\d+"],
         "min_quality_score": 1,
-        "dynamic_loading": True
+        "dynamic_loading": True,
+        "use_api": False
     },
     "artstation": {
         "search_url": lambda q, page: f"https://www.artstation.com/search?q={quote(q)}&page={page}",
@@ -112,7 +148,8 @@ SITE_CONFIGS = {
         ],
         "quality_patterns": [r"large", r"medium", r"small"],
         "min_quality_score": 1,
-        "dynamic_loading": True
+        "dynamic_loading": True,
+        "use_api": False
     },
     "ideogram": {
         "search_url": lambda q, page: f"https://ideogram.ai/t/explore?f={quote(q)}&page={page}",
@@ -126,7 +163,8 @@ SITE_CONFIGS = {
         "quality_patterns": [r"quality=\d+", r"width=\d+", r"height=\d+"],
         "min_quality_score": 1,
         "dynamic_loading": True,
-        "scroll_required": True
+        "scroll_required": True,
+        "use_api": False
     }
 }
 
@@ -136,6 +174,58 @@ IMG_SRC_ATTRS = [
     "data-original", "data-image", "data-full", "data-large",
     "data-src-retina", "data-srcset", "data-lazy-src"
 ]
+
+def _extract_urls_from_api(site_config: Dict, api_response: dict) -> List[str]:
+    """Extract image URLs from API response."""
+    urls = []
+    
+    try:
+        # Handle different API response structures
+        if site_config.get("api_image_key"):
+            key_path = site_config["api_image_key"].split(".")
+            
+            # Navigate through nested dictionary
+            data = api_response
+            for key in key_path:
+                if isinstance(data, dict) and key in data:
+                    data = data[key]
+                else:
+                    return urls
+            
+            # If we found a single URL
+            if isinstance(data, str):
+                urls.append(data)
+            # If we found a list of URLs
+            elif isinstance(data, list):
+                urls.extend(data)
+            # If we found a list of objects with URLs
+            elif isinstance(data, dict):
+                # Try common image URL keys
+                for img_key in ["url", "src", "image", "photo", "webformatURL", "largeImageURL"]:
+                    if img_key in data:
+                        urls.append(data[img_key])
+                        break
+        
+        # Fallback: look for common patterns in API response
+        if not urls:
+            # Search for image URLs in the entire response
+            response_str = json.dumps(api_response)
+            # Find URLs that look like image URLs
+            img_url_patterns = [
+                r'https://[^"\s]+\.(jpg|jpeg|png|webp|gif)',
+                r'https://images\.unsplash\.com[^"\s]+',
+                r'https://images\.pexels\.com[^"\s]+',
+                r'https://cdn\.pixabay\.com[^"\s]+'
+            ]
+            
+            for pattern in img_url_patterns:
+                matches = re.findall(pattern, response_str)
+                urls.extend(matches)
+    
+    except Exception as e:
+        print(f"Error extracting URLs from API response: {e}")
+    
+    return list(set(urls))  # Remove duplicates
 
 def _extract_high_quality_urls(html: str, site_config: Dict) -> List[str]:
     """Extract high-quality image URLs using site-specific selectors."""
@@ -266,6 +356,25 @@ def _get_page_with_retry(session: requests.Session, url: str, timeout: int, max_
             time.sleep(random.uniform(2, 5))
     return None
 
+def _get_api_data(session: requests.Session, api_url: str, timeout: int, max_retries: int = 3) -> Optional[dict]:
+    """Get data from API endpoint with retry mechanism."""
+    for attempt in range(max_retries):
+        try:
+            resp = session.get(api_url, headers=API_HEADERS, timeout=timeout)
+            if resp.status_code == 200:
+                return resp.json()
+            elif resp.status_code == 429:  # Rate limited
+                wait_time = random.uniform(30, 60)
+                print(f"API rate limited, waiting {wait_time:.1f} seconds...")
+                time.sleep(wait_time)
+            else:
+                print(f"API HTTP {resp.status_code} for {api_url}")
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"Failed to fetch API {api_url} after {max_retries} attempts: {e}")
+            time.sleep(random.uniform(2, 5))
+    return None
+
 def scrape_query(
     sites: Iterable[str],
     query: str,
@@ -315,19 +424,55 @@ def scrape_query(
             continue
         
         print(f"Scraping {site}...")
+        
+        # Use specialized Unsplash scraper if available
+        if site == "unsplash" and UNSPLASH_SCRAPER_AVAILABLE and site_config.get("use_specialized_scraper"):
+            print("Using specialized Unsplash scraper with httpx + selectolax...")
+            try:
+                unsplash_scraper = UnsplashScraper(timeout=timeout)
+                target_per_page = max(1, target_per_site // max_pages)
+                unsplash_ids = unsplash_scraper.scrape_query(
+                    query=query,
+                    max_pages=max_pages,
+                    target_per_page=target_per_page,
+                    dest_dir=paths["raw"],
+                    db=db,
+                    min_size=min_size
+                )
+                new_ids.extend(unsplash_ids)
+                print(f"Specialized Unsplash scraper completed: {len(unsplash_ids)} images")
+                continue
+            except Exception as e:
+                print(f"Specialized Unsplash scraper failed: {e}")
+                print("Falling back to standard method...")
+        
+        # Standard scraping method
         fetched = 0
         
         for page in range(1, max_pages + 1):
             try:
-                url = site_config["search_url"](query, page)
-                html_content = _get_page_with_retry(session, url, timeout)
+                # Try API first if available
+                urls = []
+                if site_config.get("use_api") and "api_url" in site_config:
+                    api_url = site_config["api_url"](query, page)
+                    print(f"Trying API: {api_url}")
+                    
+                    api_data = _get_api_data(session, api_url, timeout)
+                    if api_data:
+                        urls = _extract_urls_from_api(site_config, api_data)
+                        print(f"API found {len(urls)} images on {site} page {page}")
                 
-                if not html_content:
-                    print(f"Failed to fetch {site} page {page}")
-                    break
-                
-                urls = _extract_high_quality_urls(html_content, site_config)
-                print(f"Found {len(urls)} potential images on {site} page {page}")
+                # Fallback to HTML scraping if API fails or no API available
+                if not urls:
+                    url = site_config["search_url"](query, page)
+                    html_content = _get_page_with_retry(session, url, timeout)
+                    
+                    if not html_content:
+                        print(f"Failed to fetch {site} page {page}")
+                        break
+                    
+                    urls = _extract_high_quality_urls(html_content, site_config)
+                    print(f"HTML found {len(urls)} potential images on {site} page {page}")
                 
                 if not urls:
                     print(f"No images found on {site} page {page}, trying next page...")

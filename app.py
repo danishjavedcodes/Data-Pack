@@ -157,6 +157,15 @@ if page == "Scrape":
     - 🛡️ Better error handling and HTTP status management
     - 📊 Quality scoring for image selection
     - 🌐 Support for dynamic loading sites (Unsplash, Pexels, Ideogram)
+    - 🔌 **NEW: API-based scraping** for better results on modern sites
+    """)
+    
+    # API key information
+    st.warning("""
+    **API Keys (Optional):**
+    - **Pixabay**: Uses demo key by default. For better results, get a free API key from [Pixabay API](https://pixabay.com/api/docs/)
+    - **Unsplash & Pexels**: Use their public APIs automatically
+    - Other sites: Use HTML scraping as fallback
     """)
 
     if st.button("Start Scraping", type="primary", disabled=len(sites) == 0):
