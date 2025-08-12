@@ -188,18 +188,26 @@ elif page == "Preprocess":
     # Build selection UI
     st.subheader("Image Selection")
     
+    # Initialize session state for selected IDs
+    if 'selected_ids' not in st.session_state:
+        st.session_state.selected_ids = []
+    
     # Add select all option
     col1, col2 = st.columns([3, 1])
     with col1:
         selected_ids = st.multiselect(
             "Select image IDs to preprocess",
             options=[r["id"] for r in rows],
+            default=st.session_state.selected_ids,
             format_func=lambda rid: f"{rid} | {next((r['source'] for r in rows if r['id']==rid), '?')}"
         )
     with col2:
         if st.button("Select All", type="secondary"):
-            selected_ids = [r["id"] for r in rows]
+            st.session_state.selected_ids = [r["id"] for r in rows]
             st.rerun()
+    
+    # Update session state with current selection
+    st.session_state.selected_ids = selected_ids
     
     st.caption(f"Selected {len(selected_ids)} out of {len(rows)} images")
 
