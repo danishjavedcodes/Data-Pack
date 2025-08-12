@@ -13,13 +13,13 @@ from bs4 import BeautifulSoup
 from src.utils.io import download_image, rate_limited_sleep
 from src.utils.db import Database
 
-# Try to import the specialized Unsplash scraper
+# Try to import the specialized Unsplash API scraper
 try:
-    from src.scraping.unsplash import UnsplashScraper
-    UNSPLASH_SCRAPER_AVAILABLE = True
+    from src.scraping.unsplash import UnsplashAPIScraper
+    UNSPLASH_API_AVAILABLE = True
 except ImportError:
-    UNSPLASH_SCRAPER_AVAILABLE = False
-    print("Warning: Specialized Unsplash scraper not available, using fallback method")
+    UNSPLASH_API_AVAILABLE = False
+    print("Warning: Unsplash API scraper not available")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -61,350 +61,13 @@ API_HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
 }
 
-# Enhanced site configurations with modern selectors and API endpoints
+# Only Unsplash configuration for now
 SITE_CONFIGS = {
     "unsplash": {
-        "search_url": lambda q, page: f"https://unsplash.com/s/photos/{quote(q)}?page={page}",
-        "api_url": lambda q, page: f"https://unsplash.com/napi/search/photos?query={quote(q)}&page={page}&per_page=30&order_by=relevant",
-        "img_selectors": [
-            "img[src*='images.unsplash.com']", 
-            "img[data-src*='images.unsplash.com']",
-            "img[srcset*='images.unsplash.com']",
-            "a[href*='/photos/'] img",
-            "figure img",
-            "[data-test='photo-card'] img",
-            "img[alt*='photo']",
-            "img[alt*='image']"
-        ],
-        "quality_patterns": [r"w=\d+", r"h=\d+", r"fit=crop", r"auto=format", r"q=\d+"],
-        "min_quality_score": 1,
-        "dynamic_loading": True,
-        "scroll_required": True,
         "use_api": True,
-        "api_image_key": "urls.regular",  # Path to image URL in API response
-        "use_specialized_scraper": True  # Use the specialized Unsplash scraper
-    },
-    "pexels": {
-        "search_url": lambda q, page: f"https://www.pexels.com/search/{quote(q)}/?page={page}",
-        "api_url": lambda q, page: f"https://www.pexels.com/api/v1/search?query={quote(q)}&page={page}&per_page=15",
-        "img_selectors": [
-            "img[src*='images.pexels.com']", 
-            "img[data-src*='images.pexels.com']",
-            "img[srcset*='images.pexels.com']",
-            "a[href*='/photo/'] img",
-            "article img",
-            "[data-testid='photo-card'] img"
-        ],
-        "quality_patterns": [r"auto=compress", r"cs=tinysrgb", r"w=\d+", r"h=\d+"],
-        "min_quality_score": 1,
-        "dynamic_loading": True,
-        "scroll_required": True,
-        "use_api": True,
-        "api_image_key": "src.large2x"  # Pexels API structure
-    },
-    "pixabay": {
-        "search_url": lambda q, page: f"https://pixabay.com/images/search/{quote(q)}/?pagi={page}",
-        "api_url": lambda q, page: f"https://pixabay.com/api/?key=DEMO_KEY&q={quote(q)}&page={page}&per_page=20",
-        "img_selectors": [
-            "img[src*='cdn.pixabay.com']", 
-            "img[data-src*='cdn.pixabay.com']",
-            "img[srcset*='cdn.pixabay.com']",
-            "a[href*='/photo/'] img"
-        ],
-        "quality_patterns": [r"__340", r"__480", r"__1280", r"__1920"],
-        "min_quality_score": 2,
-        "dynamic_loading": False,
-        "use_api": True,
-        "api_image_key": "webformatURL"
-    },
-    "flickr": {
-        "search_url": lambda q, page: f"https://www.flickr.com/search/?text={quote(q)}&page={page}",
-        "img_selectors": [
-            "img[src*='live.staticflickr.com']", 
-            "img[data-src*='live.staticflickr.com']",
-            "a[href*='/photos/'] img"
-        ],
-        "quality_patterns": [r"_b\.", r"_c\.", r"_z\.", r"_n\."],
-        "min_quality_score": 2,
-        "dynamic_loading": False,
-        "use_api": False
-    },
-    "wallhaven": {
-        "search_url": lambda q, page: f"https://wallhaven.cc/search?q={quote(q)}&page={page}",
-        "img_selectors": [
-            "img[src*='w.wallhaven.cc']", 
-            "img[data-src*='w.wallhaven.cc']",
-            "a[href*='/wallpaper/'] img"
-        ],
-        "quality_patterns": [r"full", r"large", r"medium"],
-        "min_quality_score": 1,
-        "dynamic_loading": False,
-        "use_api": False
-    },
-    "deviantart": {
-        "search_url": lambda q, page: f"https://www.deviantart.com/search?q={quote(q)}&page={page}",
-        "img_selectors": [
-            "img[src*='images-wixmp-']", 
-            "img[data-src*='images-wixmp-']",
-            "a[href*='/art/'] img"
-        ],
-        "quality_patterns": [r"v1", r"f_auto", r"w_\d+", r"h_\d+"],
-        "min_quality_score": 1,
-        "dynamic_loading": True,
-        "use_api": False
-    },
-    "artstation": {
-        "search_url": lambda q, page: f"https://www.artstation.com/search?q={quote(q)}&page={page}",
-        "img_selectors": [
-            "img[src*='cdnb.artstation.com']", 
-            "img[data-src*='cdnb.artstation.com']",
-            "a[href*='/artwork/'] img"
-        ],
-        "quality_patterns": [r"large", r"medium", r"small"],
-        "min_quality_score": 1,
-        "dynamic_loading": True,
-        "use_api": False
-    },
-    "ideogram": {
-        "search_url": lambda q, page: f"https://ideogram.ai/t/explore?f={quote(q)}&page={page}",
-        "img_selectors": [
-            "img[src*='ideogram.ai']", 
-            "img[data-src*='ideogram.ai']",
-            "img[src*='cdn.ideogram.ai']",
-            "a[href*='/t/'] img",
-            "[data-testid='image-card'] img"
-        ],
-        "quality_patterns": [r"quality=\d+", r"width=\d+", r"height=\d+"],
-        "min_quality_score": 1,
-        "dynamic_loading": True,
-        "scroll_required": True,
-        "use_api": False
+        "api_scraper": True
     }
 }
-
-# Additional image source attributes to check
-IMG_SRC_ATTRS = [
-    "src", "data-src", "data-lazy", "data-srcset", "srcset", 
-    "data-original", "data-image", "data-full", "data-large",
-    "data-src-retina", "data-srcset", "data-lazy-src"
-]
-
-def _extract_urls_from_api(site_config: Dict, api_response: dict) -> List[str]:
-    """Extract image URLs from API response."""
-    urls = []
-    
-    try:
-        # Handle different API response structures
-        if site_config.get("api_image_key"):
-            key_path = site_config["api_image_key"].split(".")
-            
-            # Navigate through nested dictionary
-            data = api_response
-            for key in key_path:
-                if isinstance(data, dict) and key in data:
-                    data = data[key]
-                else:
-                    return urls
-            
-            # If we found a single URL
-            if isinstance(data, str):
-                urls.append(data)
-            # If we found a list of URLs
-            elif isinstance(data, list):
-                urls.extend(data)
-            # If we found a list of objects with URLs
-            elif isinstance(data, dict):
-                # Try common image URL keys
-                for img_key in ["url", "src", "image", "photo", "webformatURL", "largeImageURL"]:
-                    if img_key in data:
-                        urls.append(data[img_key])
-                        break
-        
-        # Fallback: look for common patterns in API response
-        if not urls:
-            # Search for image URLs in the entire response
-            response_str = json.dumps(api_response)
-            # Find URLs that look like image URLs
-            img_url_patterns = [
-                r'https://[^"\s]+\.(jpg|jpeg|png|webp|gif)',
-                r'https://images\.unsplash\.com[^"\s]+',
-                r'https://images\.pexels\.com[^"\s]+',
-                r'https://cdn\.pixabay\.com[^"\s]+'
-            ]
-            
-            for pattern in img_url_patterns:
-                matches = re.findall(pattern, response_str)
-                urls.extend(matches)
-    
-    except Exception as e:
-        print(f"Error extracting URLs from API response: {e}")
-    
-    return list(set(urls))  # Remove duplicates
-
-def _extract_high_quality_urls(html: str, site_config: Dict) -> List[str]:
-    """Extract high-quality image URLs using site-specific selectors."""
-    soup = BeautifulSoup(html, "lxml")
-    urls: Set[str] = set()
-    
-    # Use site-specific selectors
-    for selector in site_config.get("img_selectors", ["img"]):
-        for img in soup.select(selector):
-            for attr in IMG_SRC_ATTRS:
-                val = img.get(attr)
-                if not val:
-                    continue
-                
-                # Handle srcset
-                if attr.endswith("srcset"):
-                    parts = [p.strip() for p in val.split(",") if p.strip()]
-                    if parts:
-                        # Get the highest resolution URL from srcset
-                        best_url = None
-                        best_width = 0
-                        for part in parts:
-                            url_part = part.split(" ")[0]
-                            width_match = re.search(r"(\d+)w", part)
-                            if width_match:
-                                width = int(width_match.group(1))
-                                if width > best_width:
-                                    best_width = width
-                                    best_url = url_part
-                        if best_url:
-                            urls.add(best_url)
-                else:
-                    urls.add(val)
-    
-    # Also look for links that might contain image URLs
-    for link in soup.find_all("a", href=True):
-        href = link.get("href")
-        if href and any(pattern in href for pattern in ["/photo/", "/photos/", "/art/", "/artwork/", "/t/"]):
-            # Check if the link contains an image
-            img_tag = link.find("img")
-            if img_tag:
-                for attr in IMG_SRC_ATTRS:
-                    val = img_tag.get(attr)
-                    if val:
-                        urls.add(val)
-    
-    # Filter and clean URLs
-    clean_urls = []
-    for url in urls:
-        if not url.lower().startswith("http"):
-            continue
-        
-        # Remove query parameters that might reduce quality
-        base_url = re.sub(r"\?.*$", "", url)
-        
-        # Score URL quality
-        quality_score = 0
-        for pattern in site_config.get("quality_patterns", []):
-            if re.search(pattern, url, re.IGNORECASE):
-                quality_score += 1
-        
-        # Only include URLs that meet minimum quality threshold
-        if quality_score >= site_config.get("min_quality_score", 0):
-            clean_urls.append(base_url)
-    
-    return list(clean_urls)
-
-def _extract_generic_urls(html: str) -> List[str]:
-    """Extract image URLs from generic HTML."""
-    soup = BeautifulSoup(html, "lxml")
-    urls: Set[str] = set()
-    
-    for img in soup.find_all("img"):
-        for attr in IMG_SRC_ATTRS:
-            val = img.get(attr)
-            if not val:
-                continue
-            
-            if attr.endswith("srcset"):
-                parts = [p.strip() for p in val.split(",") if p.strip()]
-                if parts:
-                    # Get the largest image from srcset
-                    url = parts[-1].split(" ")[0]
-                    urls.add(url)
-            else:
-                urls.add(val)
-    
-    # Clean URLs
-    clean_urls = []
-    for url in urls:
-        if not url.lower().startswith("http"):
-            continue
-        # Remove query parameters
-        clean_url = re.sub(r"\?.*$", "", url)
-        clean_urls.append(clean_url)
-    
-    return list(clean_urls)
-
-def _download_with_retry(url: str, dest_dir: Path, timeout: int, min_size: int, max_retries: int = 3) -> Optional[Dict]:
-    """Download image with retry mechanism."""
-    for attempt in range(max_retries):
-        try:
-            result = download_image(url, dest_dir, timeout, min_size)
-            if result:
-                return result
-        except Exception as e:
-            if attempt == max_retries - 1:
-                print(f"Failed to download {url} after {max_retries} attempts: {e}")
-            time.sleep(random.uniform(1, 3))  # Random delay between retries
-    return None
-
-def _get_page_with_retry(session: requests.Session, url: str, timeout: int, max_retries: int = 3) -> Optional[str]:
-    """Get page content with retry mechanism and rotating user agents."""
-    for attempt in range(max_retries):
-        try:
-            # Rotate user agent on each attempt
-            headers = HEADERS.copy()
-            headers["User-Agent"] = random.choice(USER_AGENTS)
-            session.headers.update(headers)
-            
-            resp = session.get(url, timeout=timeout)
-            if resp.status_code == 200:
-                return resp.text
-            elif resp.status_code == 429:  # Rate limited
-                wait_time = random.uniform(30, 60)
-                print(f"Rate limited, waiting {wait_time:.1f} seconds...")
-                time.sleep(wait_time)
-            elif resp.status_code == 403:  # Forbidden
-                wait_time = random.uniform(15, 45)
-                print(f"403 Forbidden - Site blocking requests. Attempt {attempt + 1}/{max_retries}. Waiting {wait_time:.1f} seconds...")
-                time.sleep(wait_time)
-            else:
-                print(f"HTTP {resp.status_code} for {url}")
-        except Exception as e:
-            if attempt == max_retries - 1:
-                print(f"Failed to fetch {url} after {max_retries} attempts: {e}")
-            time.sleep(random.uniform(2, 5))
-    return None
-
-def _get_api_data(session: requests.Session, api_url: str, timeout: int, max_retries: int = 3) -> Optional[dict]:
-    """Get data from API endpoint with retry mechanism and rotating user agents."""
-    for attempt in range(max_retries):
-        try:
-            # Rotate user agent on each attempt
-            headers = API_HEADERS.copy()
-            headers["User-Agent"] = random.choice(USER_AGENTS)
-            
-            resp = session.get(api_url, headers=headers, timeout=timeout)
-            if resp.status_code == 200:
-                return resp.json()
-            elif resp.status_code == 429:  # Rate limited
-                wait_time = random.uniform(30, 60)
-                print(f"API rate limited, waiting {wait_time:.1f} seconds...")
-                time.sleep(wait_time)
-            elif resp.status_code == 403:  # Forbidden
-                wait_time = random.uniform(15, 45)
-                print(f"API 403 Forbidden - Site blocking API requests. Attempt {attempt + 1}/{max_retries}. Waiting {wait_time:.1f} seconds...")
-                time.sleep(wait_time)
-            else:
-                print(f"API HTTP {resp.status_code} for {api_url}")
-        except Exception as e:
-            if attempt == max_retries - 1:
-                print(f"Failed to fetch API {api_url} after {max_retries} attempts: {e}")
-            time.sleep(random.uniform(2, 5))
-    return None
 
 def scrape_query(
     sites: Iterable[str],
@@ -420,152 +83,42 @@ def scrape_query(
     max_workers: int = 4,
 ) -> List[int]:
     new_ids: List[int] = []
-    session = requests.Session()
-    session.headers.update(HEADERS)
-
-    def _ingest_url(img_url: str, source: str):
-        info = _download_with_retry(img_url, dest_dir=paths["raw"], timeout=timeout, min_size=min_size)
-        if not info:
-            return
-        img_id = db.upsert_image({
-            "source": source,
-            "query": query,
-            "url": img_url,
-            "local_path": info["local_path"],
-            "processed_path": None,
-            "width": info["width"],
-            "height": info["height"],
-            "format": info["format"],
-            "hash": None,
-            "type": None,
-            "prompt": None,
-            "flags": None,
-        })
-        if img_id:
-            new_ids.append(img_id)
-
-    # Scrape configured sites
-    for site in sites:
-        if site == "generic_url_list":
-            continue
+    
+    # Only support Unsplash for now
+    if "unsplash" not in sites:
+        print("Only Unsplash is currently supported. Please select Unsplash.")
+        return new_ids
+    
+    if not UNSPLASH_API_AVAILABLE:
+        print("Unsplash API scraper not available. Please check the installation.")
+        return new_ids
+    
+    print("Using Unsplash API scraper...")
+    
+    try:
+        # Initialize Unsplash API scraper
+        unsplash_scraper = UnsplashAPIScraper(timeout=timeout)
         
-        site_config = SITE_CONFIGS.get(site)
-        if not site_config:
-            print(f"Warning: No configuration for site '{site}', skipping...")
-            continue
+        # Calculate target per page (API max is 30)
+        target_per_page = min(target_per_site // max_pages, 30)
+        if target_per_page < 1:
+            target_per_page = 1
         
-        print(f"Scraping {site}...")
+        # Scrape using the API
+        unsplash_ids = unsplash_scraper.scrape_query(
+            query=query,
+            max_pages=max_pages,
+            target_per_page=target_per_page,
+            dest_dir=paths["raw"],
+            db=db,
+            min_size=min_size
+        )
         
-        # Use specialized Unsplash scraper if available
-        if site == "unsplash" and UNSPLASH_SCRAPER_AVAILABLE and site_config.get("use_specialized_scraper"):
-            print("Using specialized Unsplash scraper with httpx + selectolax...")
-            try:
-                unsplash_scraper = UnsplashScraper(timeout=timeout)
-                target_per_page = max(1, target_per_site // max_pages)
-                unsplash_ids = unsplash_scraper.scrape_query(
-                    query=query,
-                    max_pages=max_pages,
-                    target_per_page=target_per_page,
-                    dest_dir=paths["raw"],
-                    db=db,
-                    min_size=min_size
-                )
-                new_ids.extend(unsplash_ids)
-                print(f"Specialized Unsplash scraper completed: {len(unsplash_ids)} images")
-                continue
-            except Exception as e:
-                print(f"Specialized Unsplash scraper failed: {e}")
-                print("Falling back to standard method...")
+        new_ids.extend(unsplash_ids)
+        print(f"Unsplash API scraping completed: {len(unsplash_ids)} images")
         
-        # Standard scraping method
-        fetched = 0
-        
-        for page in range(1, max_pages + 1):
-            try:
-                # Try API first if available
-                urls = []
-                if site_config.get("use_api") and "api_url" in site_config:
-                    api_url = site_config["api_url"](query, page)
-                    print(f"Trying API: {api_url}")
-                    
-                    api_data = _get_api_data(session, api_url, timeout)
-                    if api_data:
-                        urls = _extract_urls_from_api(site_config, api_data)
-                        print(f"API found {len(urls)} images on {site} page {page}")
-                
-                # Fallback to HTML scraping if API fails or no API available
-                if not urls:
-                    url = site_config["search_url"](query, page)
-                    html_content = _get_page_with_retry(session, url, timeout)
-                    
-                    if not html_content:
-                        print(f"Failed to fetch {site} page {page}")
-                        break
-                    
-                    urls = _extract_high_quality_urls(html_content, site_config)
-                    print(f"HTML found {len(urls)} potential images on {site} page {page}")
-                
-                if not urls:
-                    print(f"No images found on {site} page {page}, trying next page...")
-                    continue
-                
-                # Use threading for faster downloads
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures = []
-                    for img_url in urls:
-                        if fetched >= target_per_site:
-                            break
-                        future = executor.submit(_ingest_url, img_url, site)
-                        futures.append(future)
-                        fetched += 1
-                    
-                    # Wait for downloads to complete
-                    for future in as_completed(futures):
-                        try:
-                            future.result()
-                        except Exception as e:
-                            print(f"Download error: {e}")
-                
-                if fetched >= target_per_site:
-                    break
-                
-                # Rate limiting
-                rate_limited_sleep(rate_limit_per_min)
-                
-            except Exception as e:
-                print(f"Error scraping {site} page {page}: {e}")
-                continue
-
-    # Scrape generic URLs
-    if generic_urls:
-        print("Scraping generic URLs...")
-        for page_url in generic_urls:
-            try:
-                html_content = _get_page_with_retry(session, page_url, timeout)
-                if not html_content:
-                    continue
-                
-                urls = _extract_generic_urls(html_content)
-                print(f"Found {len(urls)} images on {page_url}")
-                
-                # Download images from generic URLs
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures = []
-                    for img_url in urls:
-                        future = executor.submit(_ingest_url, img_url, "generic")
-                        futures.append(future)
-                    
-                    for future in as_completed(futures):
-                        try:
-                            future.result()
-                        except Exception as e:
-                            print(f"Download error: {e}")
-                
-                rate_limited_sleep(rate_limit_per_min)
-                
-            except Exception as e:
-                print(f"Error scraping {page_url}: {e}")
-                continue
-
+    except Exception as e:
+        print(f"Error with Unsplash API scraper: {e}")
+    
     print(f"Scraping complete. Downloaded {len(new_ids)} new images.")
     return new_ids

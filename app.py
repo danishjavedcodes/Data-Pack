@@ -57,63 +57,26 @@ if page == "Scrape":
     # Enhanced site selection with descriptions
     st.subheader("Select Image Sources")
     
-    # Create columns for better organization
-    col1, col2 = st.columns(2)
+    # Only Unsplash is supported for now
+    st.info("""
+    **Currently Supported:**
+    - **Unsplash** (Official API) - High-quality free stock photos
     
-    with col1:
-        st.markdown("**Photo Sites:**")
-        photo_sites = st.multiselect(
-            "Photo/Stock Sites",
-            options=["unsplash", "pexels", "pixabay", "flickr"],
-            default=["unsplash", "pexels"],
-            help="High-quality stock photo websites"
-        )
-        
-        st.markdown("**Art Sites:**")
-        art_sites = st.multiselect(
-            "Art/Illustration Sites", 
-            options=["deviantart", "artstation", "wallhaven"],
-            help="Artwork and illustration platforms"
-        )
+    **Coming Soon:**
+    - Pexels, Pixabay, Flickr, and other sites will be added back
+    """)
     
-    with col2:
-        st.markdown("**AI-Generated:**")
-        ai_sites = st.multiselect(
-            "AI Image Sites",
-            options=["ideogram"],
-            help="AI-generated image platforms"
-        )
-        
-        st.markdown("**Other:**")
-        other_sites = st.multiselect(
-            "Other Sources",
-            options=["generic_url_list"],
-            help="Custom URL scraping"
-        )
+    # Simplified site selection
+    sites = st.multiselect(
+        "Select Image Sources",
+        options=["unsplash"],
+        default=["unsplash"],
+        help="Currently only Unsplash is supported using their official API"
+    )
     
-    # Combine all selected sites
-    sites = photo_sites + art_sites + ai_sites + other_sites
+    if not sites:
+        st.warning("Please select Unsplash to continue.")
     
-    # Site descriptions
-    site_descriptions = {
-        "unsplash": "High-quality free stock photos",
-        "pexels": "Free stock photos and videos", 
-        "pixabay": "Free images, photos, and illustrations",
-        "flickr": "Photo sharing and hosting platform",
-        "deviantart": "Art community and gallery",
-        "artstation": "Digital art and game development",
-        "wallhaven": "Wallpaper and background images",
-        "ideogram": "AI-generated images and art",
-        "generic_url_list": "Custom webpage scraping"
-    }
-    
-    if sites:
-        st.markdown("**Selected Sources:**")
-        for site in sites:
-            st.markdown(f"- **{site.title()}**: {site_descriptions.get(site, 'Custom source')}")
-    else:
-        st.warning("Please select at least one image source.")
-
     st.markdown("---")
     
     # Search configuration
@@ -150,39 +113,25 @@ if page == "Scrape":
 
     # Quality info
     st.info("""
-    **Enhanced Features:**
-    - 🎯 Site-specific quality filtering and modern selectors
-    - 🔄 Automatic retry on failures with smart rate limiting
-    - ⚡ Concurrent downloads for speed
-    - 🛡️ Better error handling and HTTP status management
-    - 📊 Quality scoring for image selection
-    - 🌐 Support for dynamic loading sites (Unsplash, Pexels, Ideogram)
-    - 🔌 **NEW: API-based scraping** for better results on modern sites
-    - 🕵️ **Anti-detection measures** with rotating user agents
+    **Unsplash API Features:**
+    - 🎯 **Official API** - Uses Unsplash's documented search endpoint
+    - 🔄 **Rate limit handling** - Respects API limits automatically
+    - ⚡ **High-quality images** - Gets 1080px width images by default
+    - 🛡️ **Reliable access** - No more 403 errors or blocking
+    - 📊 **Structured data** - Clean JSON responses with metadata
+    - 🌐 **Proper attribution** - Follows Unsplash guidelines
     """)
     
     # API key information
-    st.warning("""
-    **API Keys (Optional):**
-    - **Pixabay**: Uses demo key by default. For better results, get a free API key from [Pixabay API](https://pixabay.com/api/docs/)
-    - **Unsplash & Pexels**: Use their public APIs automatically
-    - Other sites: Use HTML scraping as fallback
+    st.success("""
+    **Unsplash API Access:**
+    - **Demo Mode**: Currently using demo access (50 requests/hour)
+    - **Production**: Get free API key from [Unsplash Developers](https://unsplash.com/developers)
+    - **Rate Limits**: Demo = 50/hour, Production = 5000/hour
+    - **No 403 Errors**: Official API access prevents blocking
     """)
     
-    # 403 Error information
-    st.error("""
-    **⚠️ 403 Forbidden Errors:**
-    Some sites (like Unsplash, Pexels) may block automated requests with 403 errors.
-    
-    **Solutions:**
-    1. **Wait and retry** - The scraper automatically retries with different user agents
-    2. **Use fewer concurrent downloads** - Reduce "Max concurrent downloads" to 1-2
-    3. **Increase delays** - Set higher "Requests per minute" values (60-120)
-    4. **Try different times** - Some sites are more lenient during off-peak hours
-    5. **Use VPN/Proxy** - If you have access to different IP addresses
-    
-    The scraper will automatically fall back to alternative methods if one fails.
-    """)
+    # Remove the 403 error section since we're using the official API
 
     if st.button("Start Scraping", type="primary", disabled=len(sites) == 0):
         with st.status("Scraping in progress...", expanded=True) as status:

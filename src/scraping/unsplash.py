@@ -3,185 +3,128 @@ import time
 import random
 from pathlib import Path
 from typing import List, Optional, Dict
-from urllib.parse import urlparse, urlunparse, quote
+from urllib.parse import quote
 
 import httpx
-from selectolax.parser import HTMLParser
 
 from src.utils.io import download_image
 from src.utils.db import Database
 
-class UnsplashScraper:
-    """Specialized scraper for Unsplash using httpx and selectolax."""
+class UnsplashAPIScraper:
+    """Official Unsplash API scraper using their documented endpoints."""
     
-    def __init__(self, timeout: int = 30, max_retries: int = 3):
+    def __init__(self, access_key: str = None, timeout: int = 30):
         self.timeout = timeout
-        self.max_retries = max_retries
+        self.base_url = "https://api.unsplash.com"
         
-        # Rotating User Agents to avoid detection
-        self.user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
-        ]
+        # Use demo access key if none provided
+        self.access_key = access_key or "DEMO_KEY"
         
-        # Enhanced headers that mimic real browser behavior
-        self.base_headers = {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Cache-Control": "max-age=0",
-            "DNT": "1",
-            "Sec-CH-UA": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-            "Sec-CH-UA-Mobile": "?0",
-            "Sec-CH-UA-Platform": '"Windows"',
+        # API headers as per documentation
+        self.headers = {
+            "Authorization": f"Client-ID {self.access_key}",
+            "Accept-Version": "v1",
+            "User-Agent": "TARUMResearch-DatasetBuilder/1.0"
         }
         
-        # Initialize client with rotating user agent
-        self.client = self._create_client()
+        # Rate limiting info
+        self.rate_limit_remaining = 50  # Demo limit
+        self.rate_limit_reset = None
         
-        # Words to exclude from URLs
-        self.exclude_words = ["data:", "profile", "premium", "avatar", "logo", "icon"]
-    
-    def _create_client(self) -> httpx.Client:
-        """Create HTTP client with random user agent and enhanced headers."""
-        headers = self.base_headers.copy()
-        headers["User-Agent"] = random.choice(self.user_agents)
-        
-        return httpx.Client(
-            timeout=self.timeout,
-            headers=headers,
-            follow_redirects=True,
-            http2=True
+        # Initialize client
+        self.client = httpx.Client(
+            timeout=timeout,
+            headers=self.headers,
+            follow_redirects=True
         )
-    
-    def _rotate_client(self):
-        """Rotate to a new client with different user agent."""
-        if hasattr(self, 'client'):
-            self.client.close()
-        self.client = self._create_client()
     
     def __del__(self):
         """Clean up the HTTP client."""
         if hasattr(self, 'client'):
             self.client.close()
     
-    def get_search_url(self, query: str, page: int = 1) -> str:
-        """Generate Unsplash search URL."""
-        return f"https://unsplash.com/s/photos/{quote(query)}?page={page}"
-    
-    def extract_image_urls(self, url: str) -> List[str]:
-        """Extract image URLs from Unsplash page using selectolax."""
-        for attempt in range(self.max_retries):
-            try:
-                print(f"Fetching: {url} (attempt {attempt + 1})")
-                
-                # Rotate client on retry
-                if attempt > 0:
-                    self._rotate_client()
-                    time.sleep(random.uniform(2, 5))
-                
-                resp = self.client.get(url)
-                
-                if resp.status_code == 200:
-                    tree = HTMLParser(resp.text)
-                    
-                    # Multiple selectors to catch different image loading patterns
-                    selectors = [
-                        "figure a img[srcset]",
-                        "img[srcset*='images.unsplash.com']",
-                        "a[href*='/photos/'] img[srcset]",
-                        "img[src*='images.unsplash.com']",
-                        "figure img[srcset]",
-                        "[data-test='photo-card'] img[srcset]",
-                        "img[alt*='photo']",
-                        "img[alt*='image']"
-                    ]
-                    
-                    all_images = []
-                    for selector in selectors:
-                        images = tree.css(selector)
-                        all_images.extend(images)
-                        if images:
-                            print(f"Found {len(images)} images with selector: {selector}")
-                    
-                    # Remove duplicates while preserving order
-                    seen = set()
-                    unique_images = []
-                    for img in all_images:
-                        if img not in seen:
-                            seen.add(img)
-                            unique_images.append(img)
-                    
-                    filtered_urls = []
-                    
-                    for img in unique_images:
-                        # Try srcset first
-                        srcset = img.attrs.get("srcset", "")
-                        if srcset:
-                            urls = srcset.split(", ")
-                            for u in urls:
-                                if any(exclude_word in u.lower() for exclude_word in self.exclude_words):
-                                    continue
-                                
-                                # Extract URL from srcset entry (format: "url width")
-                                url_part = u.split(" ")[0]
-                                if url_part.startswith("http"):
-                                    parsed_url = urlparse(url_part)
-                                    clean_url = urlunparse((
-                                        parsed_url.scheme, 
-                                        parsed_url.netloc, 
-                                        parsed_url.path, 
-                                        '', '', ''
-                                    ))
-                                    if clean_url not in filtered_urls:
-                                        filtered_urls.append(clean_url)
-                        
-                        # Fallback to src attribute
-                        src = img.attrs.get("src", "")
-                        if src and src.startswith("http") and "images.unsplash.com" in src:
-                            if not any(exclude_word in src.lower() for exclude_word in self.exclude_words):
-                                parsed_url = urlparse(src)
-                                clean_url = urlunparse((
-                                    parsed_url.scheme, 
-                                    parsed_url.netloc, 
-                                    parsed_url.path, 
-                                    '', '', ''
-                                ))
-                                if clean_url not in filtered_urls:
-                                    filtered_urls.append(clean_url)
-                    
-                    print(f"Extracted {len(filtered_urls)} unique image URLs")
-                    return filtered_urls
-                
-                elif resp.status_code == 403:
-                    print(f"403 Forbidden - Site is blocking requests. Attempt {attempt + 1}/{self.max_retries}")
-                    if attempt < self.max_retries - 1:
-                        wait_time = random.uniform(10, 30)
-                        print(f"Waiting {wait_time:.1f} seconds before retry...")
-                        time.sleep(wait_time)
-                    continue
-                
-                else:
-                    print(f"Error getting response: {resp.status_code}")
-                    return []
-                    
-            except Exception as e:
-                print(f"Error extracting URLs from {url} (attempt {attempt + 1}): {e}")
-                if attempt < self.max_retries - 1:
-                    time.sleep(random.uniform(2, 5))
-                continue
+    def _handle_rate_limits(self, response: httpx.Response):
+        """Handle rate limiting based on response headers."""
+        if 'X-Ratelimit-Remaining' in response.headers:
+            self.rate_limit_remaining = int(response.headers['X-Ratelimit-Remaining'])
+            print(f"Rate limit remaining: {self.rate_limit_remaining}")
         
-        print(f"Failed to extract URLs after {self.max_retries} attempts")
-        return []
+        if 'X-Ratelimit-Reset' in response.headers:
+            self.rate_limit_reset = int(response.headers['X-Ratelimit-Reset'])
+    
+    def search_photos(self, query: str, page: int = 1, per_page: int = 30, 
+                     order_by: str = "relevant") -> Optional[Dict]:
+        """
+        Search photos using the official Unsplash API.
+        
+        Args:
+            query: Search term
+            page: Page number (default: 1)
+            per_page: Number of items per page (max: 30)
+            order_by: Sort order (relevant, latest, oldest)
+        """
+        try:
+            # Check rate limit
+            if self.rate_limit_remaining <= 0:
+                print("Rate limit exceeded. Waiting for reset...")
+                if self.rate_limit_reset:
+                    wait_time = max(0, self.rate_limit_reset - time.time())
+                    if wait_time > 0:
+                        print(f"Waiting {wait_time:.0f} seconds for rate limit reset...")
+                        time.sleep(wait_time)
+            
+            # Build API URL
+            url = f"{self.base_url}/search/photos"
+            params = {
+                "query": query,
+                "page": page,
+                "per_page": min(per_page, 30),  # API max is 30
+                "order_by": order_by
+            }
+            
+            print(f"Searching Unsplash API: {url} with params {params}")
+            
+            response = self.client.get(url, params=params)
+            
+            # Handle rate limits
+            self._handle_rate_limits(response)
+            
+            if response.status_code == 200:
+                data = response.json()
+                print(f"API Response: Found {len(data.get('results', []))} photos")
+                return data
+            elif response.status_code == 403:
+                print("403 Forbidden - Check your access key")
+                return None
+            elif response.status_code == 429:
+                print("429 Too Many Requests - Rate limit exceeded")
+                return None
+            else:
+                print(f"API Error: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            print(f"Error searching photos: {e}")
+            return None
+    
+    def extract_image_urls(self, api_response: Dict) -> List[str]:
+        """Extract image URLs from API response."""
+        urls = []
+        
+        if not api_response or 'results' not in api_response:
+            return urls
+        
+        for photo in api_response['results']:
+            if 'urls' in photo:
+                # Use 'regular' size for good quality (1080px width)
+                # You can also use 'full' for maximum quality
+                if 'regular' in photo['urls']:
+                    urls.append(photo['urls']['regular'])
+                elif 'full' in photo['urls']:
+                    urls.append(photo['urls']['full'])
+        
+        print(f"Extracted {len(urls)} image URLs from API response")
+        return urls
     
     def download_images(self, urls: List[str], dest_dir: Path, min_size: int = 512) -> List[Dict]:
         """Download images and return info about successful downloads."""
@@ -205,9 +148,9 @@ class UnsplashScraper:
                 else:
                     print(f"✗ Failed to download: {url}")
                 
-                # Rate limiting
+                # Rate limiting between downloads
                 if i < len(urls) - 1:  # Don't sleep after the last download
-                    time.sleep(random.uniform(0.5, 1.5))
+                    time.sleep(random.uniform(1, 2))
                     
             except Exception as e:
                 print(f"Error downloading {url}: {e}")
@@ -217,25 +160,31 @@ class UnsplashScraper:
     
     def scrape_query(self, query: str, max_pages: int, target_per_page: int, 
                     dest_dir: Path, db: Database, min_size: int = 512) -> List[int]:
-        """Scrape Unsplash for a given query."""
+        """Scrape Unsplash for a given query using the official API."""
         new_ids = []
         
         for page in range(1, max_pages + 1):
             try:
                 print(f"\n--- Scraping page {page} for query: '{query}' ---")
                 
-                # Get search URL
-                search_url = self.get_search_url(query, page)
+                # Search photos via API
+                api_response = self.search_photos(
+                    query=query,
+                    page=page,
+                    per_page=target_per_page,
+                    order_by="relevant"
+                )
+                
+                if not api_response:
+                    print(f"Failed to get API response for page {page}")
+                    continue
                 
                 # Extract image URLs
-                urls = self.extract_image_urls(search_url)
+                urls = self.extract_image_urls(api_response)
                 
                 if not urls:
                     print(f"No images found on page {page}")
                     continue
-                
-                # Limit URLs per page
-                urls = urls[:target_per_page]
                 
                 # Download images
                 downloaded = self.download_images(urls, dest_dir, min_size)
@@ -243,7 +192,7 @@ class UnsplashScraper:
                 # Add to database
                 for img_info in downloaded:
                     img_id = db.upsert_image({
-                        "source": "unsplash",
+                        "source": "unsplash_api",
                         "query": query,
                         "url": img_info["url"],
                         "local_path": img_info["local_path"],
@@ -263,7 +212,7 @@ class UnsplashScraper:
                 
                 # Rate limiting between pages
                 if page < max_pages:
-                    wait_time = random.uniform(3, 8)
+                    wait_time = random.uniform(2, 4)
                     print(f"Waiting {wait_time:.1f} seconds before next page...")
                     time.sleep(wait_time)
                 
@@ -271,5 +220,5 @@ class UnsplashScraper:
                 print(f"Error scraping page {page}: {e}")
                 continue
         
-        print(f"\nUnsplash scraping complete. Downloaded {len(new_ids)} new images.")
+        print(f"\nUnsplash API scraping complete. Downloaded {len(new_ids)} new images.")
         return new_ids
