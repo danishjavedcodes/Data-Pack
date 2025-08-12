@@ -186,11 +186,22 @@ elif page == "Preprocess":
     st.caption(f"Found {len(rows)} records")
 
     # Build selection UI
-    selected_ids = st.multiselect(
-        "Select image IDs to preprocess",
-        options=[r["id"] for r in rows],
-        format_func=lambda rid: f"{rid} | {next((r['source'] for r in rows if r['id']==rid), '?')}"
-    )
+    st.subheader("Image Selection")
+    
+    # Add select all option
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        selected_ids = st.multiselect(
+            "Select image IDs to preprocess",
+            options=[r["id"] for r in rows],
+            format_func=lambda rid: f"{rid} | {next((r['source'] for r in rows if r['id']==rid), '?')}"
+        )
+    with col2:
+        if st.button("Select All", type="secondary"):
+            selected_ids = [r["id"] for r in rows]
+            st.rerun()
+    
+    st.caption(f"Selected {len(selected_ids)} out of {len(rows)} images")
 
     st.markdown("---")
     st.subheader("Processing Options")
