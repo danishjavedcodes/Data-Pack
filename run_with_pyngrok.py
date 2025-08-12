@@ -80,17 +80,6 @@ def start_ngrok_tunnel():
         print(f"❌ Failed to start ngrok tunnel: {e}")
         return None
 
-def monitor_tunnel(tunnel):
-    """Monitor tunnel status."""
-    try:
-        while True:
-            if not tunnel.is_active:
-                print("❌ ngrok tunnel is no longer active")
-                break
-            time.sleep(5)
-    except KeyboardInterrupt:
-        pass
-
 def main():
     """Main function to run Streamlit with pyngrok."""
     print("🚀 Starting TARUMResearch Dataset Builder with pyngrok tunnel...")
@@ -126,11 +115,6 @@ def main():
     print("   • Local access: http://localhost:8501")
     
     try:
-        # Monitor tunnel in background
-        monitor_thread = threading.Thread(target=monitor_tunnel, args=(tunnel,))
-        monitor_thread.daemon = True
-        monitor_thread.start()
-        
         # Keep the main process running
         while True:
             time.sleep(1)

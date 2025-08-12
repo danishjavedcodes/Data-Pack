@@ -56,11 +56,12 @@ def scrape_query(
     generic_urls: Optional[List[str]],
     db: Database,
     paths: Dict[str, Path],
+    min_size: int = 512,
 ) -> List[int]:
     new_ids: List[int] = []
 
     def _ingest_url(img_url: str, source: str):
-        info = download_image(img_url, dest_dir=paths["raw"], timeout=timeout)
+        info = download_image(img_url, dest_dir=paths["raw"], timeout=timeout, min_size=min_size)
         if not info:
             return
         img_id = db.upsert_image({

@@ -15,13 +15,18 @@ def safe_filename_from_url(url: str) -> str:
     return f"img_{digest}"
 
 
-def download_image(url: str, dest_dir: Path, timeout: int = 15) -> Optional[Dict]:
+def download_image(url: str, dest_dir: Path, timeout: int = 15, min_size: int = 512) -> Optional[Dict]:
     headers = {"User-Agent": USER_AGENT}
     try:
         resp = requests.get(url, headers=headers, timeout=timeout)
         if resp.status_code != 200 or not resp.content:
             return None
         img = Image.open(BytesIO(resp.content)).convert("RGB")
+        
+        # Filter out images smaller than min_size
+        if img.width < min_size or img.height < min_size:
+            return None
+            
         name = safe_filename_from_url(url)
         out_path = dest_dir / f"{name}.jpg"
         dest_dir.mkdir(parents=True, exist_ok=True)
