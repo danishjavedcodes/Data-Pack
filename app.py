@@ -52,25 +52,91 @@ page = st.sidebar.radio("Navigation", ["Scrape", "Preprocess", "Create Dataset",
 
 if page == "Scrape":
     st.header("1. Scrape")
-    st.caption("Demo scrapers. Respect robots.txt and site ToS.")
+    st.caption("Enhanced scrapers with quality filtering and retry mechanisms.")
 
-    sites = st.multiselect(
-        "Select sites",
-        options=[
-            "unsplash", "pexels", "pixabay", "flickr", "wallhaven",
-            "generic_url_list"
-        ],
-        default=["unsplash", "pexels", "pixabay"],
+    # Enhanced site selection with descriptions
+    st.subheader("Select Image Sources")
+    
+    # Create columns for better organization
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Photo Sites:**")
+        photo_sites = st.multiselect(
+            "Photo/Stock Sites",
+            options=["unsplash", "pexels", "pixabay", "flickr"],
+            default=["unsplash", "pexels"],
+            help="High-quality stock photo websites"
+        )
+        
+        st.markdown("**Art Sites:**")
+        art_sites = st.multiselect(
+            "Art/Illustration Sites", 
+            options=["deviantart", "artstation", "wallhaven"],
+            help="Artwork and illustration platforms"
+        )
+    
+    with col2:
+        st.markdown("**AI-Generated:**")
+        ai_sites = st.multiselect(
+            "AI Image Sites",
+            options=["ideogram"],
+            help="AI-generated image platforms"
+        )
+        
+        st.markdown("**Other:**")
+        other_sites = st.multiselect(
+            "Other Sources",
+            options=["generic_url_list"],
+            help="Custom URL scraping"
+        )
+    
+    # Combine all selected sites
+    sites = photo_sites + art_sites + ai_sites + other_sites
+    
+    # Site descriptions
+    site_descriptions = {
+        "unsplash": "High-quality free stock photos",
+        "pexels": "Free stock photos and videos", 
+        "pixabay": "Free images, photos, and illustrations",
+        "flickr": "Photo sharing and hosting platform",
+        "deviantart": "Art community and gallery",
+        "artstation": "Digital art and game development",
+        "wallhaven": "Wallpaper and background images",
+        "ideogram": "AI-generated images and art",
+        "generic_url_list": "Custom webpage scraping"
+    }
+    
+    if sites:
+        st.markdown("**Selected Sources:**")
+        for site in sites:
+            st.markdown(f"- **{site.title()}**: {site_descriptions.get(site, 'Custom source')}")
+    else:
+        st.warning("Please select at least one image source.")
+
+    st.markdown("---")
+    
+    # Search configuration
+    st.subheader("Search Configuration")
+    query = st.text_input("Query/Keyword", value="portrait", help="Search term for images (e.g., 'portrait', 'landscape', 'people')")
+    
+    col_a, col_b = st.columns(2)
+    with col_a:
+        total_target = st.number_input("Target images per site", min_value=10, max_value=5000, value=100, step=10)
+    with col_b:
+        max_pages = st.slider("Max pages per site", min_value=1, max_value=50, value=5)
+
+    # Generic URLs
+    generic_urls_text = st.text_area(
+        "Optional: Add specific page URLs (one per line)", 
+        placeholder="https://example.com/gallery\nhttps://another-site.com/photos",
+        help="Direct URLs to scrape images from"
     )
-
-    query = st.text_input("Query/Keyword", value="mountain landscape")
-    total_target = st.number_input("Target images per site", min_value=10, max_value=5000, value=100, step=10)
-    max_pages = st.slider("Max pages per site", min_value=1, max_value=50, value=5)
-
-    generic_urls_text = st.text_area("Optional: Add page URLs (one per line) for generic scraping")
     generic_urls = [u.strip() for u in generic_urls_text.splitlines() if u.strip()]
 
-    col_a, col_b, col_c = st.columns(3)
+    # Enhanced scraping options
+    st.subheader("Advanced Options")
+    col_a, col_b, col_c, col_d = st.columns(4)
     with col_a:
         rate_limit = st.number_input("Requests per minute (per site)", min_value=10, max_value=600, value=120)
     with col_b:
@@ -78,9 +144,25 @@ if page == "Scrape":
     with col_c:
         min_size = st.number_input("Minimum image size (px)", min_value=100, max_value=2048, value=512, step=64)
         st.caption("Images smaller than this will be filtered out")
+    with col_d:
+        max_workers = st.number_input("Max concurrent downloads", min_value=1, max_value=10, value=4, step=1)
+        st.caption("Higher values = faster but may trigger rate limits")
 
-    if st.button("Start Scraping", type="primary"):
+    # Quality info
+    st.info("""
+    **Enhanced Features:**
+    - 🎯 Site-specific quality filtering and modern selectors
+    - 🔄 Automatic retry on failures with smart rate limiting
+    - ⚡ Concurrent downloads for speed
+    - 🛡️ Better error handling and HTTP status management
+    - 📊 Quality scoring for image selection
+    - 🌐 Support for dynamic loading sites (Unsplash, Pexels, Ideogram)
+    """)
+
+    if st.button("Start Scraping", type="primary", disabled=len(sites) == 0):
         with st.status("Scraping in progress...", expanded=True) as status:
+            status.write("Initializing enhanced scraper...")
+            
             new_images = scrape_query(
                 sites=sites,
                 query=query,
@@ -92,14 +174,18 @@ if page == "Scrape":
                 db=db,
                 paths=paths,
                 min_size=int(min_size),
+                max_workers=int(max_workers),
             )
             status.update(label=f"Downloaded {len(new_images)} new images (≥{min_size}px).")
 
-            st.write("Classifying image types...")
-            classify_types_for_images(db=db, image_ids=new_images)
-            counts = db.count_by_type()
-            st.subheader("Type counts")
-            st.dataframe(counts, use_container_width=True)
+            if new_images:
+                status.write("Classifying image types...")
+                classify_types_for_images(db=db, image_ids=new_images)
+                counts = db.count_by_type()
+                st.subheader("Type counts")
+                st.dataframe(counts, use_container_width=True)
+            else:
+                st.warning("No images were downloaded. Try adjusting your search terms or minimum size.")
 
 elif page == "Preprocess":
     st.header("2. Preprocess")
