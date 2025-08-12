@@ -1,4 +1,5 @@
 import streamlit as st
+import os
 
 from src.config import ensure_directories, get_paths
 from src.utils.db import Database
@@ -14,8 +15,37 @@ ensure_directories()
 paths = get_paths()
 db = Database(paths["db_file"])  # creates tables if not exist
 
-st.set_page_config(page_title="TARUMResearch Dataset Builder", layout="wide")
-st.title("TARUMResearch Dataset Builder")
+# Configure Streamlit for ngrok compatibility
+st.set_page_config(
+    page_title="TARUMResearch Dataset Builder", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Add custom CSS for better appearance
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .status-box {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #1f77b4;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<h1 class="main-header">TARUMResearch Dataset Builder</h1>', unsafe_allow_html=True)
+
+# Add info about ngrok if running
+if os.environ.get('NGROK_TUNNEL'):
+    st.info("🌐 Running via ngrok tunnel - accessible from anywhere!")
 
 page = st.sidebar.radio("Navigation", ["Scrape", "Preprocess", "Create Dataset"])  # 3 steps
 
@@ -141,3 +171,8 @@ elif page == "Create Dataset":
 
         st.success("Complete")
         st.write({k: str(v) for k, v in export_paths.items()})
+
+# Add footer with ngrok info
+if os.environ.get('NGROK_TUNNEL'):
+    st.markdown("---")
+    st.caption("🌐 Powered by ngrok - Public tunnel active")
