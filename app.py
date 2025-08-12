@@ -158,6 +158,7 @@ if page == "Scrape":
     - 📊 Quality scoring for image selection
     - 🌐 Support for dynamic loading sites (Unsplash, Pexels, Ideogram)
     - 🔌 **NEW: API-based scraping** for better results on modern sites
+    - 🕵️ **Anti-detection measures** with rotating user agents
     """)
     
     # API key information
@@ -166,6 +167,21 @@ if page == "Scrape":
     - **Pixabay**: Uses demo key by default. For better results, get a free API key from [Pixabay API](https://pixabay.com/api/docs/)
     - **Unsplash & Pexels**: Use their public APIs automatically
     - Other sites: Use HTML scraping as fallback
+    """)
+    
+    # 403 Error information
+    st.error("""
+    **⚠️ 403 Forbidden Errors:**
+    Some sites (like Unsplash, Pexels) may block automated requests with 403 errors.
+    
+    **Solutions:**
+    1. **Wait and retry** - The scraper automatically retries with different user agents
+    2. **Use fewer concurrent downloads** - Reduce "Max concurrent downloads" to 1-2
+    3. **Increase delays** - Set higher "Requests per minute" values (60-120)
+    4. **Try different times** - Some sites are more lenient during off-peak hours
+    5. **Use VPN/Proxy** - If you have access to different IP addresses
+    
+    The scraper will automatically fall back to alternative methods if one fails.
     """)
 
     if st.button("Start Scraping", type="primary", disabled=len(sites) == 0):

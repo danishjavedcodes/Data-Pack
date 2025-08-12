@@ -17,20 +17,57 @@ class UnsplashScraper:
     def __init__(self, timeout: int = 30, max_retries: int = 3):
         self.timeout = timeout
         self.max_retries = max_retries
-        self.client = httpx.Client(
-            timeout=timeout,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.5",
-                "Accept-Encoding": "gzip, deflate",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
-            }
-        )
+        
+        # Rotating User Agents to avoid detection
+        self.user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+        ]
+        
+        # Enhanced headers that mimic real browser behavior
+        self.base_headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Cache-Control": "max-age=0",
+            "DNT": "1",
+            "Sec-CH-UA": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            "Sec-CH-UA-Mobile": "?0",
+            "Sec-CH-UA-Platform": '"Windows"',
+        }
+        
+        # Initialize client with rotating user agent
+        self.client = self._create_client()
         
         # Words to exclude from URLs
         self.exclude_words = ["data:", "profile", "premium", "avatar", "logo", "icon"]
+    
+    def _create_client(self) -> httpx.Client:
+        """Create HTTP client with random user agent and enhanced headers."""
+        headers = self.base_headers.copy()
+        headers["User-Agent"] = random.choice(self.user_agents)
+        
+        return httpx.Client(
+            timeout=self.timeout,
+            headers=headers,
+            follow_redirects=True,
+            http2=True
+        )
+    
+    def _rotate_client(self):
+        """Rotate to a new client with different user agent."""
+        if hasattr(self, 'client'):
+            self.client.close()
+        self.client = self._create_client()
     
     def __del__(self):
         """Clean up the HTTP client."""
@@ -43,85 +80,108 @@ class UnsplashScraper:
     
     def extract_image_urls(self, url: str) -> List[str]:
         """Extract image URLs from Unsplash page using selectolax."""
-        try:
-            print(f"Fetching: {url}")
-            resp = self.client.get(url)
-            
-            if resp.status_code != 200:
-                print(f"Error getting response: {resp.status_code}")
-                return []
-            
-            tree = HTMLParser(resp.text)
-            
-            # Multiple selectors to catch different image loading patterns
-            selectors = [
-                "figure a img[srcset]",
-                "img[srcset*='images.unsplash.com']",
-                "a[href*='/photos/'] img[srcset]",
-                "img[src*='images.unsplash.com']",
-                "figure img[srcset]",
-                "[data-test='photo-card'] img[srcset]"
-            ]
-            
-            all_images = []
-            for selector in selectors:
-                images = tree.css(selector)
-                all_images.extend(images)
-                if images:
-                    print(f"Found {len(images)} images with selector: {selector}")
-            
-            # Remove duplicates while preserving order
-            seen = set()
-            unique_images = []
-            for img in all_images:
-                if img not in seen:
-                    seen.add(img)
-                    unique_images.append(img)
-            
-            filtered_urls = []
-            
-            for img in unique_images:
-                # Try srcset first
-                srcset = img.attrs.get("srcset", "")
-                if srcset:
-                    urls = srcset.split(", ")
-                    for u in urls:
-                        if any(exclude_word in u.lower() for exclude_word in self.exclude_words):
-                            continue
-                        
-                        # Extract URL from srcset entry (format: "url width")
-                        url_part = u.split(" ")[0]
-                        if url_part.startswith("http"):
-                            parsed_url = urlparse(url_part)
-                            clean_url = urlunparse((
-                                parsed_url.scheme, 
-                                parsed_url.netloc, 
-                                parsed_url.path, 
-                                '', '', ''
-                            ))
-                            if clean_url not in filtered_urls:
-                                filtered_urls.append(clean_url)
+        for attempt in range(self.max_retries):
+            try:
+                print(f"Fetching: {url} (attempt {attempt + 1})")
                 
-                # Fallback to src attribute
-                src = img.attrs.get("src", "")
-                if src and src.startswith("http") and "images.unsplash.com" in src:
-                    if not any(exclude_word in src.lower() for exclude_word in self.exclude_words):
-                        parsed_url = urlparse(src)
-                        clean_url = urlunparse((
-                            parsed_url.scheme, 
-                            parsed_url.netloc, 
-                            parsed_url.path, 
-                            '', '', ''
-                        ))
-                        if clean_url not in filtered_urls:
-                            filtered_urls.append(clean_url)
-            
-            print(f"Extracted {len(filtered_urls)} unique image URLs")
-            return filtered_urls
-            
-        except Exception as e:
-            print(f"Error extracting URLs from {url}: {e}")
-            return []
+                # Rotate client on retry
+                if attempt > 0:
+                    self._rotate_client()
+                    time.sleep(random.uniform(2, 5))
+                
+                resp = self.client.get(url)
+                
+                if resp.status_code == 200:
+                    tree = HTMLParser(resp.text)
+                    
+                    # Multiple selectors to catch different image loading patterns
+                    selectors = [
+                        "figure a img[srcset]",
+                        "img[srcset*='images.unsplash.com']",
+                        "a[href*='/photos/'] img[srcset]",
+                        "img[src*='images.unsplash.com']",
+                        "figure img[srcset]",
+                        "[data-test='photo-card'] img[srcset]",
+                        "img[alt*='photo']",
+                        "img[alt*='image']"
+                    ]
+                    
+                    all_images = []
+                    for selector in selectors:
+                        images = tree.css(selector)
+                        all_images.extend(images)
+                        if images:
+                            print(f"Found {len(images)} images with selector: {selector}")
+                    
+                    # Remove duplicates while preserving order
+                    seen = set()
+                    unique_images = []
+                    for img in all_images:
+                        if img not in seen:
+                            seen.add(img)
+                            unique_images.append(img)
+                    
+                    filtered_urls = []
+                    
+                    for img in unique_images:
+                        # Try srcset first
+                        srcset = img.attrs.get("srcset", "")
+                        if srcset:
+                            urls = srcset.split(", ")
+                            for u in urls:
+                                if any(exclude_word in u.lower() for exclude_word in self.exclude_words):
+                                    continue
+                                
+                                # Extract URL from srcset entry (format: "url width")
+                                url_part = u.split(" ")[0]
+                                if url_part.startswith("http"):
+                                    parsed_url = urlparse(url_part)
+                                    clean_url = urlunparse((
+                                        parsed_url.scheme, 
+                                        parsed_url.netloc, 
+                                        parsed_url.path, 
+                                        '', '', ''
+                                    ))
+                                    if clean_url not in filtered_urls:
+                                        filtered_urls.append(clean_url)
+                        
+                        # Fallback to src attribute
+                        src = img.attrs.get("src", "")
+                        if src and src.startswith("http") and "images.unsplash.com" in src:
+                            if not any(exclude_word in src.lower() for exclude_word in self.exclude_words):
+                                parsed_url = urlparse(src)
+                                clean_url = urlunparse((
+                                    parsed_url.scheme, 
+                                    parsed_url.netloc, 
+                                    parsed_url.path, 
+                                    '', '', ''
+                                ))
+                                if clean_url not in filtered_urls:
+                                    filtered_urls.append(clean_url)
+                    
+                    print(f"Extracted {len(filtered_urls)} unique image URLs")
+                    return filtered_urls
+                
+                elif resp.status_code == 403:
+                    print(f"403 Forbidden - Site is blocking requests. Attempt {attempt + 1}/{self.max_retries}")
+                    if attempt < self.max_retries - 1:
+                        wait_time = random.uniform(10, 30)
+                        print(f"Waiting {wait_time:.1f} seconds before retry...")
+                        time.sleep(wait_time)
+                    continue
+                
+                else:
+                    print(f"Error getting response: {resp.status_code}")
+                    return []
+                    
+            except Exception as e:
+                print(f"Error extracting URLs from {url} (attempt {attempt + 1}): {e}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(random.uniform(2, 5))
+                continue
+        
+        print(f"Failed to extract URLs after {self.max_retries} attempts")
+        return []
     
     def download_images(self, urls: List[str], dest_dir: Path, min_size: int = 512) -> List[Dict]:
         """Download images and return info about successful downloads."""
@@ -203,7 +263,7 @@ class UnsplashScraper:
                 
                 # Rate limiting between pages
                 if page < max_pages:
-                    wait_time = random.uniform(2, 5)
+                    wait_time = random.uniform(3, 8)
                     print(f"Waiting {wait_time:.1f} seconds before next page...")
                     time.sleep(wait_time)
                 

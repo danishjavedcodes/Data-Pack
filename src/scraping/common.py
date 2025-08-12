@@ -23,16 +23,30 @@ except ImportError:
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-    "Accept-Encoding": "gzip, deflate",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
     "Sec-Fetch-Dest": "document",
     "Sec-Fetch-Mode": "navigate",
     "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
     "Cache-Control": "max-age=0",
+    "DNT": "1",
+    "Sec-CH-UA": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+    "Sec-CH-UA-Mobile": "?0",
+    "Sec-CH-UA-Platform": '"Windows"',
 }
+
+# Rotating User Agents for anti-detection
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+]
 
 # API headers for modern sites
 API_HEADERS = {
@@ -338,15 +352,24 @@ def _download_with_retry(url: str, dest_dir: Path, timeout: int, min_size: int, 
     return None
 
 def _get_page_with_retry(session: requests.Session, url: str, timeout: int, max_retries: int = 3) -> Optional[str]:
-    """Get page content with retry mechanism."""
+    """Get page content with retry mechanism and rotating user agents."""
     for attempt in range(max_retries):
         try:
+            # Rotate user agent on each attempt
+            headers = HEADERS.copy()
+            headers["User-Agent"] = random.choice(USER_AGENTS)
+            session.headers.update(headers)
+            
             resp = session.get(url, timeout=timeout)
             if resp.status_code == 200:
                 return resp.text
             elif resp.status_code == 429:  # Rate limited
                 wait_time = random.uniform(30, 60)
                 print(f"Rate limited, waiting {wait_time:.1f} seconds...")
+                time.sleep(wait_time)
+            elif resp.status_code == 403:  # Forbidden
+                wait_time = random.uniform(15, 45)
+                print(f"403 Forbidden - Site blocking requests. Attempt {attempt + 1}/{max_retries}. Waiting {wait_time:.1f} seconds...")
                 time.sleep(wait_time)
             else:
                 print(f"HTTP {resp.status_code} for {url}")
@@ -357,15 +380,23 @@ def _get_page_with_retry(session: requests.Session, url: str, timeout: int, max_
     return None
 
 def _get_api_data(session: requests.Session, api_url: str, timeout: int, max_retries: int = 3) -> Optional[dict]:
-    """Get data from API endpoint with retry mechanism."""
+    """Get data from API endpoint with retry mechanism and rotating user agents."""
     for attempt in range(max_retries):
         try:
-            resp = session.get(api_url, headers=API_HEADERS, timeout=timeout)
+            # Rotate user agent on each attempt
+            headers = API_HEADERS.copy()
+            headers["User-Agent"] = random.choice(USER_AGENTS)
+            
+            resp = session.get(api_url, headers=headers, timeout=timeout)
             if resp.status_code == 200:
                 return resp.json()
             elif resp.status_code == 429:  # Rate limited
                 wait_time = random.uniform(30, 60)
                 print(f"API rate limited, waiting {wait_time:.1f} seconds...")
+                time.sleep(wait_time)
+            elif resp.status_code == 403:  # Forbidden
+                wait_time = random.uniform(15, 45)
+                print(f"API 403 Forbidden - Site blocking API requests. Attempt {attempt + 1}/{max_retries}. Waiting {wait_time:.1f} seconds...")
                 time.sleep(wait_time)
             else:
                 print(f"API HTTP {resp.status_code} for {api_url}")
