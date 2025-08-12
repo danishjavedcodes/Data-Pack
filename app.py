@@ -125,11 +125,25 @@ if page == "Scrape":
     # API key information
     st.success("""
     **Unsplash API Access:**
-    - **Demo Mode**: Currently using demo access (50 requests/hour)
-    - **Production**: Get free API key from [Unsplash Developers](https://unsplash.com/developers)
-    - **Rate Limits**: Demo = 50/hour, Production = 5000/hour
+    - **Production Mode**: Using your API key (5000 requests/hour)
+    - **Application**: TARUM (ID: 790856)
+    - **Rate Limits**: 5000/hour (Production limit)
     - **No 403 Errors**: Official API access prevents blocking
     """)
+    
+    # Instructions for getting API key
+    with st.expander("🔑 API Key Information"):
+        st.markdown("""
+        **Current Setup:**
+        - **Application ID**: 790856
+        - **Access Key**: IDIRKPCHUQLvHbPXkJ4nN3BVduzGLYXUq_FC-PsYkp8
+        - **Status**: Production mode active
+        
+        **Benefits:**
+        - 5000 requests per hour (vs 50 in demo)
+        - Stable and reliable access
+        - Full API features available
+        """)
     
     # Remove the 403 error section since we're using the official API
 

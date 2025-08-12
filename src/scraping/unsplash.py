@@ -17,8 +17,8 @@ class UnsplashAPIScraper:
         self.timeout = timeout
         self.base_url = "https://api.unsplash.com"
         
-        # Use demo access key if none provided
-        self.access_key = access_key or "DEMO_KEY"
+        # Use the user's actual API key
+        self.access_key = access_key or "IDIRKPCHUQLvHbPXkJ4nN3BVduzGLYXUq_FC-PsYkp8"
         
         # API headers as per documentation
         self.headers = {
@@ -27,8 +27,8 @@ class UnsplashAPIScraper:
             "User-Agent": "TARUMResearch-DatasetBuilder/1.0"
         }
         
-        # Rate limiting info
-        self.rate_limit_remaining = 50  # Demo limit
+        # Rate limiting info - Production limits
+        self.rate_limit_remaining = 5000  # Production limit
         self.rate_limit_reset = None
         
         # Initialize client
